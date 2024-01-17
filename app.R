@@ -1,3 +1,6 @@
+# andrew.corbin.ngs@gmail.com
+
+
 library(readr)
 library(dplyr)
 library(ggplot2)
@@ -12,9 +15,12 @@ library(data.table)
 library(DT)
 library(shinythemes)
 
+
+
 # # functions and needed objects
 # BiocManager::install("fgsea", dependencies = TRUE)
 # library(fgsea)
+
 
 GSEA <- function(gene_list, GO_file, pval) {
   set.seed(54321)
@@ -86,7 +92,7 @@ GSEA <- function(gene_list, GO_file, pval) {
 # Define UI for application
 ui <- fluidPage(
   theme = shinytheme("darkly"),
-  title = "Useful RNAseq Visualizations",
+  title = "GSEA Visualizations",
   tabsetPanel(
     tabPanel(
       titlePanel("GSEA"),
@@ -127,7 +133,8 @@ ui <- fluidPage(
         ),
         # Show a plot
         mainPanel(
-          plotlyOutput(outputId = "gsea_plot"),
+          plotlyOutput(outputId = "gsea_dot_up"),
+          plotlyOutput(outputId = "gsea_dot_down"),
           uiOutput("message"), width = 7
         )
       )
@@ -139,8 +146,8 @@ ui <- fluidPage(
 options(shiny.maxRequestSize = 30 * 1024^2)
 server <- function(input, output, session) {
   
-  colos <- setNames(c("firebrick2", "dodgerblue2"),
-                    c("Up-regulated", "Down-regulated"))
+  # colos <- setNames(c("firebrick2", "dodgerblue2"),
+  #                   c("Up-regulated", "Down-regulated"))
   
   output$message <- renderUI({
     HTML('<div class="shinyjs-message" style="display: none;">Generating GSEA Results...</div>')
@@ -150,9 +157,10 @@ server <- function(input, output, session) {
     shinyjs::enable("message")
     withProgress(
       message = "Generating GSEA Results...",
-      detail = "This may take a moment...",
+      detail = "This may take a few minutes depending on the size of the dataset. Thank you for your patience!",
       value = 0, {
         
+        # organize input
         pval <- reactive(input$pval)
         S4table <- read.csv(file = input$gene_list$datapath, header = TRUE, skip = 1) %>%
           filter(Gene.Symbol != "")
@@ -164,46 +172,40 @@ server <- function(input, output, session) {
         # perform GSEA
         res <- GSEA(gene_list = gene_list, GO_file = input$go_file$datapath, pval = pval())
         
-        # total_up <- sum(res$Results$Enrichment == "Up-regulated")
-        # total_down <- sum(res$Results$Enrichment == "Down-regulated")
-        # header <- paste0("Top 10 (Total pathways: Up=", total_up, ", Down=", total_down, ")")
-        # 
-        # # calculate plot width dynamically based on the number of pathways and size of dots
-        # num_pathways <- nrow(res$Results)
-        # max_width <- 800  # set your desired maximum width
-        # plot_width <- min(max_width, num_pathways * 5)  # adjust the multiplier as needed
-        # 
-        # # calculate x-axis range dynamically based on the number of pathways
-        # x_range <- c(0, max(res$Plot$data$pathway, na.rm = TRUE))
-        # 
-        # # calculate y-axis range dynamically based on the size of the dots with buffer
-        # y_range <- c(min(res$Plot$data$NES) - max(res$Plot$data$size) * 1.5,
-        #              max(res$Plot$data$NES) + max(res$Plot$data$size) * 1.5)
-        # 
+
         # plot results
-        up_reg <- res$Results[res$Results$Enrichment == "Up-regulated",]
-        up_reg <- up_reg[order(up_reg$NES,decreasing=TRUE),]
+        up_reg <- as.data.frame(res$Results[res$Results$Enrichment == "Up-regulated",])
+        up_reg$pathway <- factor(up_reg$pathway, levels = up_reg$pathway[order(up_reg$NES)])
         top_upreg <- head(up_reg, 10)
-        down_reg <- res$Results[res$Results$Enrichment == "Down-regulated",]
-        down_reg <- down_reg[order(down_reg$NES,decreasing=FALSE),]
+        down_reg <- as.data.frame(res$Results[res$Results$Enrichment == "Down-regulated",])
+        down_reg$pathway <- factor(down_reg$pathway, levels = down_reg$pathway[order(down_reg$NES)])
         top_downreg <- head(down_reg, 10)
         
+        # df <- rbind(top_upreg, top_downreg, stringsAsFactors = FALSE)
         
-        df <- rbind(top_upreg, top_downreg, stringsAsFactors = FALSE)
-        
-        gsea_plot <- ggplot(df, aes(x = NES, y = pathway, color = padj, size = size)) + 
+        gsea_dot_up <- ggplot(top_upreg, aes(x = NES, y = pathway, color = padj, size = size)) + 
           geom_point(stat = 'identity') + 
-          xlab("Ratio") + ylab("Pathway") + ggtitle("GSEA Plot") + 
-          theme_bw()
+          xlab("NES") + ylab("Pathway") + ggtitle("Up-Regulated Gene Pathways") + 
+          theme_bw() +
+          scale_color_gradient(high = "red", low = "blue")
         
-        output$gsea_plot <- renderPlotly(gsea_plot)
+        gsea_dot_down <- ggplot(top_downreg, aes(x = NES, y = pathway, color = padj, size = size)) + 
+          geom_point(stat = 'identity') + 
+          xlab("NES") + ylab("Pathway") + ggtitle("Down-Regulated Gene Pathways") + 
+          theme_bw() +
+          scale_color_gradient(high = "red", low = "blue")
+        
+        output$gsea_dot_up <- renderPlotly(gsea_dot_up)
+        output$gsea_dot_down <- renderPlotly(gsea_dot_down)
         shinyjs::disable("message")
       }
     )
   })
 }
 
+
 # Run application 
 shinyApp(ui = ui, server = server)
 
+  
   
